@@ -55,19 +55,15 @@ class SegmentationNN(nn.Module):
         self.tp_conv_sizes = self.hp["tp_conv_sizes"]
         self.ks = self.hp["ks"]
         embed0_channels = self.backbone.conv1.out_channels
-        embed1_channels = [x for x in self.backbone.layer1[-1].children()][-1].num_features
-        #self.conv00 = ConvLayer(embed0_channels, self.sizes[0]//3, 3, 2)
-        self.conv01 = ConvLayer(embed0_channels, self.sizes[0] // 2, 3, 2)
-        self.transform_dim1 = 32
-        self.conv02 = ConvLayer(embed1_channels, self.sizes[0] // 2 + self.sizes[0] % 2, 3, 1, padding="same")
-        self.convs = nn.Sequential(*[ConvLayer(self.sizes[i], self.sizes[i + 1], self.ks, 1, padding="same")
+        embed1_channels = [x for x in self.backbone.layer1[-1].children()][-2].out_channels
+        self.conv0 = ConvLayer(embed1_channels, self.sizes[0], 3, 1, padding="same")
+        self.convs = nn.Sequential(*[ConvLayer(self.sizes[i], self.sizes[i + 1], self.ks, 1)
                                      for i in range(len(self.sizes) - 1)])
-        self.transform_conv1 = ConvLayer(embed1_channels, self.transform_dim1*self.transform_dim1, 2, 1)
         self.upconv1 = TransposeConvLayer(self.sizes[-1], self.tp_conv_sizes[0], 3, 2)
         self.conv1 = ConvLayer(self.tp_conv_sizes[0], self.tp_conv_sizes[0], 3, 1, padding="same")
         self.upconv2 = TransposeConvLayer(self.tp_conv_sizes[0] + embed0_channels, self.tp_conv_sizes[1], 3, 2)
         self.conv2 = ConvLayer(self.tp_conv_sizes[1] + 3, 23, 3, 1, padding="same")
-        self.register_buffer('identity1', torch.diag(torch.ones(self.transform_dim1)))
+        self.dp = nn.Dropout2d(p=0.2)
 
         #######################################################################
         #                           END OF YOUR CODE                          #
@@ -95,8 +91,6 @@ class SegmentationNN(nn.Module):
         x = self.backbone.relu(x)
         x = self.backbone.maxpool(x)
         x = self.backbone.layer1(x)
-        #dentity1 = self.identity1.repeat(bs, 1, 1)
-        #transform1 = (identity1 + torch.max(self.transform_conv1(x).view(bs, self.transform_dim1 * self.transform_dim1, -1), 2)[0].view(bs, self.transform_dim1, self.transform_dim1))
 
         def f(x,embeds):
             s = x.shape[2:]
@@ -104,23 +98,17 @@ class SegmentationNN(nn.Module):
             x = torch.concat([x, embed_ss], 1)
             return x
 
-        def f2(x, transform):
-            s = x.shape[2:]
-            td = transform.shape[1]
-            v = (torch.bmm(x.view(bs,td,-1).transpose(1,2), transform).transpose(1,2)).view(bs,td,*s)
-            return torch.concat([x,v],1)
 
-        def f0(x,embeds0):
-            b = nn.functional.interpolate(self.conv01(embeds0), (56, 56))
-            c = self.conv02(x)
-            return torch.concatenate([b, c], 1)
-
-
-        x = f0(x,embeds0)
+        x = self.conv0(x)
+        x = self.dp(x)
         x = self.convs(x)
+        x = nn.functional.interpolate(x, (60,60))
         x = self.upconv1(x)
         x = self.conv1(x)
+        x = self.dp(x)
         x = self.upconv2(f(x,embeds0))
+        if not (x.shape[2] > 180 and x.shape[2] < 260):
+          print(f"shape sucks {x.shape[2]}")
         x = nn.functional.interpolate(x, original_size)
         x = self.conv2(f(x,inp))
 
