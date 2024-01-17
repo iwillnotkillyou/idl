@@ -104,12 +104,13 @@ class SegmentationNN(nn.Module):
         x = self.convs(x)
         x = nn.functional.interpolate(x, (60,60))
         x = self.upconv1(x)
-        x = self.conv1(x)
         x = self.dp(x)
+        x = self.conv1(x)
         x = self.upconv2(f(x,embeds0))
         if not (x.shape[2] > 180 and x.shape[2] < 260):
           print(f"shape sucks {x.shape[2]}")
         x = nn.functional.interpolate(x, original_size)
+        inp = self.dp(inp)
         x = self.conv2(f(x,inp))
 
         #######################################################################
