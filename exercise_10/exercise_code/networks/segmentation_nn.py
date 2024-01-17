@@ -63,7 +63,7 @@ class SegmentationNN(nn.Module):
         self.conv1 = ConvLayer(self.tp_conv_sizes[0], self.tp_conv_sizes[0], 3, 1, padding="same")
         self.upconv2 = TransposeConvLayer(self.tp_conv_sizes[0] + embed0_channels, self.tp_conv_sizes[1], 3, 2)
         self.conv2 = ConvLayer(self.tp_conv_sizes[1] + 3, 23, 3, 1, padding="same")
-        self.dp = nn.Dropout2d(p=0.2)
+        self.dp = nn.Dropout2d(p=0.1)
 
         #######################################################################
         #                           END OF YOUR CODE                          #
@@ -104,13 +104,12 @@ class SegmentationNN(nn.Module):
         x = self.convs(x)
         x = nn.functional.interpolate(x, (60,60))
         x = self.upconv1(x)
-        x = self.dp(x)
         x = self.conv1(x)
+        x = self.dp(x)
         x = self.upconv2(f(x,embeds0))
         if not (x.shape[2] > 180 and x.shape[2] < 260):
           print(f"shape sucks {x.shape[2]}")
         x = nn.functional.interpolate(x, original_size)
-        inp = self.dp(inp)
         x = self.conv2(f(x,inp))
 
         #######################################################################
